@@ -1,4 +1,786 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>실시간 환율 변환 지도</title>
+ <script src="https://www.gstatic.com/charts/loader.js"></script>
+ <style>
+ :root {
+ --primary-color: #667eea;
+ --secondary-color: #764ba2;
+ --accent-color: #f56500;
+ --success-color: #48bb78;
+ --error-color: #e53e3e;
+ --warning-color: #f6ad55;
+ --bg-primary: #f5f5f5;
+ --bg-secondary: white;
+ --border-color: #e2e8f0;
+ --text-primary: #2d3748;
+ --text-secondary: #4a5568;
+ --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+ --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
+ }
 
+ * {
+ box-sizing: border-box;
+ }
+
+ body {
+ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+ margin: 0;
+ padding: 20px;
+ background: var(--bg-primary);
+ color: var(--text-primary);
+ line-height: 1.6;
+ }
+
+ .container {
+ max-width: 1400px;
+ margin: 0 auto;
+ background: var(--bg-secondary);
+ border-radius: 12px;
+ box-shadow: var(--shadow-lg);
+ overflow: hidden;
+ }
+
+ .header {
+ background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+ color: white;
+ padding: 24px;
+ text-align: center;
+ }
+
+ .header h1 {
+ margin: 0 0 12px 0;
+ font-size: clamp(20px, 4vw, 32px);
+ font-weight: 700;
+ }
+
+ .header p {
+ margin: 0;
+ opacity: 0.9;
+ font-size: 16px;
+ }
+
+ .map-container {
+ position: relative;
+ padding: 20px;
+ min-height: 650px;
+ }
+
+ .map-wrapper {
+ position: relative;
+ width: 100%;
+ height: 600px;
+ border-radius: 8px;
+ overflow: hidden;
+ }
+
+ #geochart {
+ width: 100%;
+ height: 100%;
+ }
+
+ .currency-input {
+ position: absolute;
+ background: var(--bg-secondary);
+ border: 2px solid var(--border-color);
+ border-radius: 8px;
+ padding: 8px;
+ width: 70px;
+ box-shadow: var(--shadow);
+ z-index: 1000;
+ transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+ cursor: pointer;
+ transform: translate(-50%, -50%);
+ backdrop-filter: blur(10px);
+ }
+
+ .currency-input:hover {
+ transform: translate(-50%, -50%) scale(1.05);
+ box-shadow: var(--shadow-lg);
+ }
+
+ .currency-input.active {
+ border-color: var(--accent-color);
+ box-shadow: 0 8px 25px rgba(245, 101, 0, 0.3);
+ transform: translate(-50%, -50%) scale(1.1);
+ background: #fff7ed;
+ z-index: 1020;
+ }
+
+ .currency-input.target {
+ border-color: var(--success-color);
+ box-shadow: 0 4px 15px rgba(72, 187, 120, 0.2);
+ background: #f0fff4;
+ transform: translate(-50%, -50%) scale(1.02);
+ }
+
+ .currency-input.map-hover {
+ border-color: var(--primary-color);
+ box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+ transform: translate(-50%, -50%) scale(1.15);
+ background: #eef2ff;
+ z-index: 1010;
+ }
+
+ .country-label {
+ font-size: 9px;
+ font-weight: 600;
+ color: var(--primary-color);
+ margin-bottom: 4px;
+ text-align: center;
+ line-height: 1.2;
+ letter-spacing: 0.02em;
+ }
+
+ .currency-input input {
+ width: 100%;
+ padding: 4px 6px;
+ border: 1px solid var(--border-color);
+ border-radius: 4px;
+ font-size: 10px;
+ text-align: center;
+ background: transparent;
+ transition: all 0.2s ease;
+ font-weight: 500;
+ -moz-appearance: textfield; /* Firefox */
+ }
+
+ /* Chrome, Safari, Edge - 스핀 버튼 제거 */
+ .currency-input input::-webkit-outer-spin-button,
+ .currency-input input::-webkit-inner-spin-button {
+ -webkit-appearance: none;
+ margin: 0;
+ }
+
+ .currency-input input:focus {
+ outline: none;
+ border-color: var(--primary-color);
+ box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+ }
+
+ .currency-input input::placeholder {
+ color: #a0aec0;
+ }
+
+ /* 반응형 위치 조정 */
+ .input-US { left: 23%; top: 48%; }
+ .input-CA { left: 21%; top: 30%; }
+ .input-BR { left: 35%; top: 68%; }
+ .input-GB { left: 46%; top: 30%; }
+ .input-FR { left: 47%; top: 43%; } /* 5% 아래로 (38% → 43%) */
+ .input-DE { left: 54%; top: 34%; } /* 4% 오른쪽으로 (50% → 54%) */
+ .input-RU { left: 65%; top: 22%; }
+ .input-CN { left: 68%; top: 50%; } /* 2% 왼쪽으로 (70% → 68%) */
+ .input-IN { left: 62%; top: 58%; } /* 6% 왼쪽으로 (68% → 62%) */
+ .input-KR { left: 75%; top: 45%; }
+ .input-JP { left: 82%; top: 48%; }
+ .input-AU { left: 80%; top: 75%; }
+
+ .status-panel {
+ position: absolute;
+ top: 20px;
+ left: 20px;
+ background: var(--bg-secondary);
+ border: 2px solid var(--success-color);
+ border-radius: 12px;
+ padding: 16px;
+ box-shadow: var(--shadow-lg);
+ z-index: 1001;
+ min-width: 220px;
+ backdrop-filter: blur(10px);
+ }
+
+ .status-panel h4 {
+ margin: 0 0 12px 0;
+ color: var(--success-color);
+ font-size: 14px;
+ font-weight: 600;
+ }
+
+ .api-status {
+ font-size: 11px;
+ color: var(--text-secondary);
+ margin-top: 10px;
+ padding: 8px;
+ background: #f8f9fa;
+ border-radius: 6px;
+ border-left: 3px solid var(--border-color);
+ transition: all 0.3s ease;
+ }
+
+ .loading {
+ color: var(--warning-color);
+ border-left-color: var(--warning-color);
+ }
+ .success {
+ color: var(--success-color);
+ border-left-color: var(--success-color);
+ }
+ .error {
+ color: var(--error-color);
+ border-left-color: var(--error-color);
+ }
+
+ .instruction {
+ margin-top: 20px;
+ padding: 16px 20px;
+ background: linear-gradient(45deg, #e8f2ff, #f0f8ff);
+ border-radius: 8px;
+ text-align: center;
+ color: var(--text-primary);
+ border: 1px solid rgba(102, 126, 234, 0.1);
+ }
+
+ .loading-overlay {
+ position: absolute;
+ top: 0;
+ left: 0;
+ right: 0;
+ bottom: 0;
+ background: rgba(255, 255, 255, 0.9);
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ z-index: 2000;
+ backdrop-filter: blur(4px);
+ opacity: 0;
+ visibility: hidden;
+ transition: all 0.3s ease;
+ }
+
+ .loading-overlay.show {
+ opacity: 1;
+ visibility: visible;
+ }
+
+ .spinner {
+ width: 40px;
+ height: 40px;
+ border: 4px solid #f3f3f3;
+ border-top: 4px solid var(--primary-color);
+ border-radius: 50%;
+ animation: spin 1s linear infinite;
+ }
+
+ @keyframes spin {
+ 0% { transform: rotate(0deg); }
+ 100% { transform: rotate(360deg); }
+ }
+
+ /* 반응형 디자인 */
+ @media (max-width: 768px) {
+ body {
+ padding: 10px;
+ }
+
+ .header {
+ padding: 16px;
+ }
+
+ .map-container {
+ padding: 15px;
+ min-height: 500px;
+ }
+
+ .map-wrapper {
+ height: 450px;
+ }
+
+ .currency-input {
+ width: 60px;
+ padding: 6px;
+ }
+
+ .country-label {
+ font-size: 8px;
+ }
+
+ .currency-input input {
+ font-size: 9px;
+ }
+
+ .status-panel {
+ position: relative;
+ top: auto;
+ left: auto;
+ margin-bottom: 15px;
+ min-width: auto;
+ }
+ }
+
+ /* 다크모드 지원 */
+ @media (prefers-color-scheme: dark) {
+ :root {
+ --bg-primary: #1a202c;
+ --bg-secondary: #2d3748;
+ --text-primary: #f7fafc;
+ --text-secondary: #e2e8f0;
+ --border-color: #4a5568;
+ }
+ }
+ </style>
+</head>
+<body>
+ <div class="container">
+ <div class="header">
+ <h1>🌍 실시간 다국가 환율 변환</h1>
+ <p>한 국가에 금액을 입력하면 모든 국가의 환율이 자동 계산됩니다</p>
+ </div>
+
+ <div class="map-container">
+ <div class="loading-overlay" id="loadingOverlay">
+ <div class="spinner"></div>
+ </div>
+
+ <div class="map-wrapper">
+ <div id="geochart"></div>
+
+ <!-- 국가별 통화 입력 필드 -->
+ <div class="currency-input input-US" data-country="US" data-currency="USD">
+ <div class="country-label">미국 (USD)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-CA" data-country="CA" data-currency="CAD">
+ <div class="country-label">캐나다 (CAD)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-BR" data-country="BR" data-currency="BRL">
+ <div class="country-label">브라질 (BRL)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-GB" data-country="GB" data-currency="GBP">
+ <div class="country-label">영국 (GBP)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-FR" data-country="FR" data-currency="EUR">
+ <div class="country-label">프랑스 (EUR)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-DE" data-country="DE" data-currency="EUR">
+ <div class="country-label">독일 (EUR)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-RU" data-country="RU" data-currency="RUB">
+ <div class="country-label">러시아 (RUB)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-CN" data-country="CN" data-currency="CNY">
+ <div class="country-label">중국 (CNY)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-IN" data-country="IN" data-currency="INR">
+ <div class="country-label">인도 (INR)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+
+ <div class="currency-input input-KR" data-country="KR" data-currency="KRW">
+ <div class="country-label">한국 (KRW)</div>
+ <input type="number" placeholder="0" step="1" min="0">
+ </div>
+
+ <div class="currency-input input-JP" data-country="JP" data-currency="JPY">
+ <div class="country-label">일본 (JPY)</div>
+ <input type="number" placeholder="0" step="1" min="0">
+ </div>
+
+ <div class="currency-input input-AU" data-country="AU" data-currency="AUD">
+ <div class="country-label">호주 (AUD)</div>
+ <input type="number" placeholder="0" step="0.01" min="0">
+ </div>
+ </div>
+
+ <div class="status-panel">
+ <h4>💡 사용법</h4>
+ <div style="font-size: 12px; line-height: 1.5; color: var(--text-secondary);">
+ 텍스트박스를 클릭하고<br>
+ 금액을 입력해보세요!
+ </div>
+ <div class="api-status" id="apiStatus">
+ 🔄 실시간 환율 로딩 중...
+ </div>
+ </div>
+
+ <div class="instruction">
+ <strong>💰 실시간 환율 변환:</strong>
+ 한 국가에 금액을 입력하면 다른 모든 국가에 자동으로 환전된 금액이 표시됩니다
+ <br><small style="color: var(--text-secondary); margin-top: 8px; display: block;">
+ 🔄 환율은 5분마다 자동 업데이트됩니다 | 📱 반응형 디자인 지원
+ </small>
+ </div>
+ </div>
+ </div>
+
+ <script>
+ // 상수 및 설정
+ const CONFIG = {
+ UPDATE_INTERVAL: 5 * 60 * 1000, // 5분
+ DEBOUNCE_DELAY: 300, // 입력 디바운싱
+ API_TIMEOUT: 10000, // API 타임아웃
+ DECIMAL_PLACES: {
+ JPY: 0, KRW: 0,
+ INR: 1, RUB: 1,
+ default: 2
+ }
+ };
+
+ // 국가-통화 매핑
+ const COUNTRIES = {
+ US: { currency: 'USD', name: '미국' },
+ CA: { currency: 'CAD', name: '캐나다' },
+ BR: { currency: 'BRL', name: '브라질' },
+ GB: { currency: 'GBP', name: '영국' },
+ FR: { currency: 'EUR', name: '프랑스' },
+ DE: { currency: 'EUR', name: '독일' },
+ RU: { currency: 'RUB', name: '러시아' },
+ CN: { currency: 'CNY', name: '중국' },
+ IN: { currency: 'INR', name: '인도' },
+ KR: { currency: 'KRW', name: '한국' },
+ JP: { currency: 'JPY', name: '일본' },
+ AU: { currency: 'AUD', name: '호주' }
+ };
+
+ // 기본 환율 (KRW 기준)
+ let exchangeRates = {
+ USD: 1330, CAD: 980, BRL: 270, GBP: 1680, EUR: 1450,
+ RUB: 14, CNY: 185, INR: 16, KRW: 1, JPY: 9.8, AUD: 890
+ };
+
+ const CHART_COLORS = [
+ '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
+ '#FECA57', '#FF9FF3', '#54A0FF', '#5F27CD',
+ '#00D2D3', '#FF9F43', '#10AC84', '#EE5A24'
+ ];
+
+ // 상태 관리
+ class AppState {
+ constructor() {
+ this.activeCountry = null;
+ this.isConverting = false;
+ this.lastUpdate = null;
+ this.chart = null;
+ }
+
+ setActive(country) {
+ this.activeCountry = country;
+ this.updateUI();
+ }
+
+ clearActive() {
+ this.activeCountry = null;
+ this.updateUI();
+ }
+
+ updateUI() {
+ // 모든 상태 클래스 제거
+ document.querySelectorAll('.currency-input').forEach(el => {
+ el.classList.remove('active', 'target', 'map-hover');
+ });
+
+ if (this.activeCountry) {
+ const activeEl = document.querySelector(`.input-${this.activeCountry}`);
+ activeEl?.classList.add('active');
+
+ // 다른 국가들을 target으로 설정
+ Object.keys(COUNTRIES).forEach(country => {
+ if (country !== this.activeCountry) {
+ document.querySelector(`.input-${country}`)?.classList.add('target');
+ }
+ });
+ }
+ }
+ }
+
+ // 유틸리티 함수들
+ const utils = {
+ debounce(func, wait) {
+ let timeout;
+ return function executedFunction(...args) {
+ const later = () => {
+ clearTimeout(timeout);
+ func(...args);
+ };
+ clearTimeout(timeout);
+ timeout = setTimeout(later, wait);
+ };
+ },
+
+ // 숫자를 통화별 형식에 맞게 포맷팅 - 쉼표 없이 간단하게
+ formatCurrency(value, currency) {
+ if (!value || isNaN(value) || value === 0) return '';
+
+ const num = parseFloat(value);
+ const decimals = CONFIG.DECIMAL_PLACES[currency] ?? CONFIG.DECIMAL_PLACES.default;
+
+ return num.toFixed(decimals);
+ },
+
+ // 문자열에서 숫자만 추출
+ parseNumber(str) {
+ if (!str || str === '') return 0;
+ const num = parseFloat(str);
+ return isNaN(num) ? 0 : num;
+ },
+
+ // 입력값이 유효한 숫자인지 검사
+ isValidNumber(str) {
+ if (!str || str.trim() === '') return false;
+ const num = this.parseNumber(str);
+ return !isNaN(num) && num > 0;
+ },
+
+ showLoading() {
+ document.getElementById('loadingOverlay').classList.add('show');
+ },
+
+ hideLoading() {
+ document.getElementById('loadingOverlay').classList.remove('show');
+ },
+
+ updateStatus(message, type = 'loading') {
+ const status = document.getElementById('apiStatus');
+ status.innerHTML = message;
+ status.className = `api-status ${type}`;
+ }
+ };
+
+ // 메인 앱 클래스
+ class CurrencyConverter {
+ constructor() {
+ this.state = new AppState();
+ this.setupEventListeners();
+ this.init();
+ }
+
+ async init() {
+ try {
+ utils.showLoading();
+ await this.loadGoogleCharts();
+ await this.drawMap();
+ await this.fetchExchangeRates();
+ this.startPeriodicUpdates();
+ } catch (error) {
+ console.error('초기화 오류:', error);
+ utils.updateStatus('⚠️ 초기화 실패', 'error');
+ } finally {
+ utils.hideLoading();
+ }
+ }
+
+ loadGoogleCharts() {
+ return new Promise((resolve) => {
+ google.charts.load('current', {
+ packages: ['geochart'],
+ mapsApiKey: 'AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY'
+ });
+ google.charts.setOnLoadCallback(resolve);
+ });
+ }
+
+ async drawMap() {
+ const data = google.visualization.arrayToDataTable([
+ ['Country', 'Value'],
+ ...Object.keys(COUNTRIES).map((code, i) => [code, i + 1])
+ ]);
+
+ const chart = new google.visualization.GeoChart(document.getElementById('geochart'));
+ this.state.chart = chart;
+
+ const options = {
+ legend: 'none',
+ colorAxis: {
+ legend: { position: 'none' },
+ colors: CHART_COLORS
+ },
+ backgroundColor: '#f8fafc',
+ datalessRegionColor: '#f1f5f9',
+ defaultColor: '#e2e8f0',
+ width: '100%',
+ height: '100%',
+ tooltip: { trigger: 'none' },
+ enableRegionInteractivity: true
+ };
+
+ chart.draw(data, options);
+
+ // 차트 이벤트 리스너
+ google.visualization.events.addListener(chart, 'select', () => {
+ const selection = chart.getSelection();
+ if (selection.length > 0) {
+ const country = Object.keys(COUNTRIES)[selection[0].row];
+ if (country) this.focusCountry(country);
+ }
+ });
+
+ // 지도 호버 효과 설정 (지연 로딩)
+ setTimeout(() => this.setupMapHoverEffects(), 1000);
+ }
+
+ setupMapHoverEffects() {
+ const paths = document.querySelectorAll('#geochart path[fill]');
+ paths.forEach((path, i) => {
+ const country = Object.keys(COUNTRIES)[i];
+ if (!country) return;
+
+ path.style.cursor = 'pointer';
+ path.addEventListener('mouseenter', () => this.handleMapHover(country));
+ path.addEventListener('mouseleave', () => this.handleMapLeave());
+ });
+ }
+
+ setupEventListeners() {
+ document.querySelectorAll('.currency-input').forEach(el => {
+ const country = el.dataset.country;
+ const currency = el.dataset.currency;
+ const input = el.querySelector('input');
+
+ // 입력 이벤트 - 실시간 계산
+ input.addEventListener('input', (e) => {
+ const value = e.target.value;
+
+ // 빈 값이면 모든 필드 초기화
+ if (!value || value.trim() === '') {
+ this.clearOtherInputs(country);
+ return;
+ }
+
+ // 숫자 추출해서 계산
+ const numValue = utils.parseNumber(value);
+ if (numValue > 0) {
+ this.convertCurrencies(country, numValue);
+ }
+ });
+
+ // 포커스 이벤트
+ input.addEventListener('focus', () => {
+ this.state.setActive(country);
+ });
+
+ // 블러 이벤트
+ input.addEventListener('blur', () => {
+ this.state.clearActive();
+ });
+
+ // 마우스 이벤트
+ el.addEventListener('mouseenter', () => this.handleInputHover(country));
+ el.addEventListener('mouseleave', () => this.handleInputLeave());
+
+ // 키보드 이벤트 - 숫자만 입력 허용
+ input.addEventListener('keydown', (e) => {
+ if (e.key === 'Enter') {
+ input.blur();
+ return;
+ }
+
+ // 허용할 키들
+ const allowedKeys = [
+ 'Backspace', 'Delete', 'Tab', 'Escape', 'Enter',
+ 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+ 'Home', 'End'
+ ];
+
+ // Ctrl/Cmd 조합키 허용 (복사, 붙여넣기 등)
+ if (e.ctrlKey || e.metaKey) {
+ return;
+ }
+
+ // 허용된 키면 통과
+ if (allowedKeys.includes(e.key)) {
+ return;
+ }
+
+ // 숫자 키 허용
+ if (/^[0-9]$/.test(e.key)) {
+ return;
+ }
+
+ // 소수점 허용 (하나만)
+ if (e.key === '.' && !input.value.includes('.')) {
+ return;
+ }
+
+ // 그 외는 모두 차단
+ e.preventDefault();
+ });
+ });
+
+ // 전역 키보드 이벤트
+ document.addEventListener('keydown', (e) => {
+ if (e.key === 'Escape') {
+ this.clearAllInputs();
+ }
+ });
+ }
+
+ handleInputHover(country) {
+ if (this.state.activeCountry === country) return;
+ const el = document.querySelector(`.input-${country}`);
+ el?.classList.add('map-hover');
+ }
+
+ handleInputLeave() {
+ if (!this.state.activeCountry) {
+ document.querySelectorAll('.currency-input').forEach(el => {
+ el.classList.remove('map-hover');
+ });
+ }
+ }
+
+ handleMapHover(country) {
+ this.handleInputHover(country);
+ }
+
+ handleMapLeave() {
+ this.handleInputLeave();
+ }
+
+ focusCountry(country) {
+ const input = document.querySelector(`.input-${country} input`);
+ if (input) {
+ input.focus();
+ input.select();
+ }
+ }
+
+ convertCurrencies(sourceCountry, sourceValue) {
+ if (this.state.isConverting) return;
+ this.state.isConverting = true;
+
+ // 유효하지 않은 값이면 다른 필드들 초기화
+ if (!sourceValue || sourceValue <= 0) {
+ this.clearOtherInputs(sourceCountry);
+ this.state.isConverting = false;
+ return;
+ }
+
+ try {
+ const sourceCurrency = COUNTRIES[sourceCountry].currency;
+ const amountInKRW = sourceValue * exchangeRates[sourceCurrency];
+
+ Object.entries(COUNTRIES).forEach(([country, info]) => {
+ if (country === sourceCountry) return;
+
+ const converted = amountInKRW / exchangeRates[info.currency];
+ const input = document.querySelector(`.input-${country} input`);
+
+ if (input && document.activeElement !== input) {
+ if (converted > 0) {
+ input.value = utils.formatCurrency(converted, info.currency);
+ } else {
+ input.value = '';
+ }
+ }
+ });
  } catch (error) {
  console.error('환율 변환 오류:', error);
  utils.updateStatus('⚠️ 환율 변환 실패', 'error');
